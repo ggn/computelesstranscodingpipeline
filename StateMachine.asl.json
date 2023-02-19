@@ -1,0 +1,93 @@
+{
+    "Comment": "Calling APIGW HTTP Endpoint",
+    "StartAt": "Read Job Template",
+    "States": {
+        "Read Job Template": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:s3:getObject",
+            "Parameters": {
+                "Bucket": "YOUR_S3_BUCKET",
+                "Key": "YOUR_KEY_FOR_JobTemplate.json"
+            },
+            "ResultPath": "$.RESULT",
+            "Next": "Initiate Transcoding"
+        },
+        "Initiate Transcoding": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::apigateway:invoke",
+            "Parameters": {
+                "ApiEndpoint": "YOUR_API_GATEWAYENDPOINT",
+                "Method": "POST",
+                "Stage": "prod",
+                "Path": "/",
+                "RequestBody.$": "States.JsonMerge(States.StringToJson($.RESULT.Body),States.StringToJson($.INPUT),false)",
+                "AuthType": "NO_AUTH"
+            },
+            "ResultPath": "$.TRANS_JOB",
+            "Next": "Call Successful?"
+        },
+        "Call Successful?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Variable": "$.TRANS_JOB.ResponseBody.httpStatus",
+                    "IsPresent": false,
+                    "Next": "Wait Till Transcoded"
+        }
+      ],
+            "Default": "Notify Failure"
+        },
+        "Notify Failure": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sns:publish",
+            "Parameters": {
+                "Message.$": "$.TRANS_JOB.ResponseBody.message",
+                "TopicArn": "YOUR_SNS_TOPIC_ARN"
+            },
+            "End": true
+        },
+        "Wait Till Transcoded": {
+            "Type": "Wait",
+            "Seconds": 60,
+            "Next": "Check Transcoding Status"
+        },
+        "Check Transcoding Status": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::apigateway:invoke",
+            "Parameters": {
+                "ApiEndpoint": "YOUR_API_GATEWAYENDPOINT",
+                "Method": "GET",
+                "Stage": "prod",
+                "Path.$": "States.Format('/{}',$.TRANS_JOB.ResponseBody.job.id)",
+                "AuthType": "NO_AUTH"
+            },
+            "ResultPath": "$.STATUS",
+            "Next": "Transcoding Completed?"
+        },
+        "Transcoding Completed?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Variable": "$.STATUS.ResponseBody.job.status",
+                    "StringEquals": "ERROR",
+                    "Next": "Notify Failure"
+        },
+                {
+                    "Variable": "$.STATUS.ResponseBody.job.status",
+                    "StringEquals": "COMPLETE",
+                    "Next": "Notify Success"
+        }
+      ],
+            "Default": "Wait Till Transcoded"
+        },
+        "Notify Success": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sns:publish",
+            "Parameters": {
+                "Message": "Call was successful",
+                "TopicArn": "YOUR_SNS_TOPIC_ARN"
+            },
+            "End": true
+        }
+    }
+}
