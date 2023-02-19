@@ -84,7 +84,7 @@
             "Type": "Task",
             "Resource": "arn:aws:states:::sns:publish",
             "Parameters": {
-                "Message": "Call was successful",
+                "Message": "Transcoding successful",
                 "TopicArn": "YOUR_SNS_TOPIC_ARN"
             },
             "End": true
